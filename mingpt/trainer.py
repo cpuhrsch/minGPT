@@ -45,14 +45,11 @@ class Trainer:
         self.test_dataset = test_dataset
         self.config = config
 
-        # # take over whatever gpus are on the system
         self.device = 'cpu'
-        # if torch.cuda.is_available():
-        #     print(torch.cuda.current_device())
-        #     self.device = torch.device('cuda:' + str(torch.cuda.current_device()))
-        #     self.model = torch.nn.DataParallel(self.model).to(self.device)
-        self.device = torch.device('cuda')
-        self.model = self.model.to(self.device)
+        # NOTE: NT Parameters don't support distributed training yet.
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+            self.model = self.model.to(self.device)
 
     def save_checkpoint(self):
         # DataParallel wrappers keep raw model object in .module attribute
@@ -69,7 +66,7 @@ class Trainer:
             is_train = split == 'train'
             model.train(is_train)
             data = self.train_dataset if is_train else self.test_dataset
-            loader = DataLoader(data, shuffle=False, pin_memory=True,
+            loader = DataLoader(data, shuffle=True, pin_memory=True,
                                 batch_size=config.batch_size,
                                 num_workers=config.num_workers)
 
@@ -77,12 +74,10 @@ class Trainer:
             pbar = tqdm(enumerate(loader), total=len(loader)) if is_train else enumerate(loader)
             for it, (x, y) in pbar:
 
-                # place data on the correct device
-                # x = x.to(self.device)
-                # y = y.to(self.device)
                 x_unbound = [x[i, :i + 1] for i in range(len(x))]
                 y_unbound = [y[i, :i + 1] for i in range(len(y))]
 
+                # place data on the correct device
                 x = nestedtensor.nested_tensor(x_unbound, dtype=x.dtype, device=self.device)
                 y = nestedtensor.nested_tensor(y_unbound, dtype=y.dtype, device=self.device)
 
@@ -102,7 +97,7 @@ class Trainer:
 
                     # decay the learning rate based on our progress
                     if config.lr_decay:
-                        self.tokens += y.numel() # number of tokens processed this step (i.e. label is not -100)
+                        self.tokens += y.numel()
                         if self.tokens < config.warmup_tokens:
                             # linear warmup
                             lr_mult = float(self.tokens) / float(max(1, config.warmup_tokens))

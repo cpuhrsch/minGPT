@@ -69,17 +69,9 @@ class CausalSelfAttention(nn.Module):
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (torch.matmul(q, k.transpose(-2, -1))) * (1.0 / math.sqrt(k.size(-1)))
-        # att = att.masked_fill(self.mask[:,:,:T,:T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
-        # TODO: Exercise: write this out using for-loop and adopt to NT!
-        # self attention is like the encoder-decoder task except that it's trying to
-        # predict the next entry in itself. does this mean within the input itself
-        # we can just pass in variably sized sequences shifted by one (to learn
-        # to deal with variably sized sequences)?
-        # import pdb; pdb.set_trace()
         y = torch.matmul(att, v) # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        # import pdb; pdb.set_trace()
         y = y.transpose(1, 2).contiguous().reshape(-1, -1, C) # re-assemble all head outputs side by side
 
         # output projection
@@ -192,7 +184,6 @@ class GPT(nn.Module):
 
         # forward the GPT model
         token_embeddings = self.tok_emb(idx) # each index maps to a (learnable) vector
-        # position_embeddings = self.pos_emb[0, :t, :] # each position maps to a (learnable) vector
         x = self.drop(token_embeddings + self.pos_emb)
         x = self.blocks(x)
         x = self.ln_f(x)
