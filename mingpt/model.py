@@ -79,7 +79,7 @@ class CausalSelfAttention(nn.Module):
         # to deal with variably sized sequences)?
         # import pdb; pdb.set_trace()
         y = torch.matmul(att, v) # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         y = y.transpose(1, 2).contiguous().reshape(-1, -1, C) # re-assemble all head outputs side by side
 
         # output projection
@@ -201,6 +201,6 @@ class GPT(nn.Module):
         # if we are given some desired targets also calculate the loss
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(logits, targets).to_tensor()
 
         return logits, loss

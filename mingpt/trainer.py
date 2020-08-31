@@ -46,9 +46,10 @@ class Trainer:
         self.config = config
 
         # # take over whatever gpus are on the system
-        # self.device = 'cpu'
+        self.device = 'cpu'
         # if torch.cuda.is_available():
-        #     self.device = torch.cuda.current_device()
+        #     print(torch.cuda.current_device())
+        #     self.device = torch.device('cuda:' + str(torch.cuda.current_device()))
         #     self.model = torch.nn.DataParallel(self.model).to(self.device)
         self.device = torch.device('cuda')
         self.model = self.model.to(self.device)
@@ -101,7 +102,7 @@ class Trainer:
 
                     # decay the learning rate based on our progress
                     if config.lr_decay:
-                        self.tokens += (y >= 0).sum() # number of tokens processed this step (i.e. label is not -100)
+                        self.tokens += y.numel() # number of tokens processed this step (i.e. label is not -100)
                         if self.tokens < config.warmup_tokens:
                             # linear warmup
                             lr_mult = float(self.tokens) / float(max(1, config.warmup_tokens))
