@@ -8,6 +8,7 @@ import logging
 
 from tqdm import tqdm
 import numpy as np
+import nestedtensor
 
 import torch
 import torch.optim as optim
@@ -44,11 +45,13 @@ class Trainer:
         self.test_dataset = test_dataset
         self.config = config
 
-        # take over whatever gpus are on the system
-        self.device = 'cpu'
-        if torch.cuda.is_available():
-            self.device = torch.cuda.current_device()
-            self.model = torch.nn.DataParallel(self.model).to(self.device)
+        # # take over whatever gpus are on the system
+        # self.device = 'cpu'
+        # if torch.cuda.is_available():
+        #     self.device = torch.cuda.current_device()
+        #     self.model = torch.nn.DataParallel(self.model).to(self.device)
+        self.device = torch.device('cuda')
+        self.model = self.model.to(self.device)
 
     def save_checkpoint(self):
         # DataParallel wrappers keep raw model object in .module attribute
@@ -65,7 +68,7 @@ class Trainer:
             is_train = split == 'train'
             model.train(is_train)
             data = self.train_dataset if is_train else self.test_dataset
-            loader = DataLoader(data, shuffle=True, pin_memory=True,
+            loader = DataLoader(data, shuffle=False, pin_memory=True,
                                 batch_size=config.batch_size,
                                 num_workers=config.num_workers)
 
@@ -74,8 +77,13 @@ class Trainer:
             for it, (x, y) in pbar:
 
                 # place data on the correct device
-                x = x.to(self.device)
-                y = y.to(self.device)
+                # x = x.to(self.device)
+                # y = y.to(self.device)
+                x_unbound = [x[i, :i + 1] for i in range(len(x))]
+                y_unbound = [y[i, :i + 1] for i in range(len(y))]
+
+                x = nestedtensor.nested_tensor(x_unbound, dtype=x.dtype, device=self.device)
+                y = nestedtensor.nested_tensor(y_unbound, dtype=y.dtype, device=self.device)
 
                 # forward the model
                 with torch.set_grad_enabled(is_train):

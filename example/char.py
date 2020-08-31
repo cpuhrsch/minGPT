@@ -82,8 +82,8 @@ if __name__ == "__main__":
         model = GPT(mconf)
 
         # initialize a trainer instance and kick off training
-        tconf = TrainerConfig(max_epochs=2, batch_size=512, learning_rate=6e-4,
-                              lr_decay=True, warmup_tokens=512*20, final_tokens=2*len(train_dataset)*block_size,
+        tconf = TrainerConfig(max_epochs=2, batch_size=128, learning_rate=6e-4,
+                              lr_decay=True, warmup_tokens=128*20, final_tokens=2*len(train_dataset)*block_size,
                               num_workers=4)
         trainer = Trainer(model, train_dataset, None, tconf)
         trainer.train()
