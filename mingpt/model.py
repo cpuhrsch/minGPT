@@ -9,7 +9,6 @@ GPT model:
 
 import math
 import logging
-import nestedtensor
 
 import torch
 import torch.nn as nn
@@ -63,16 +62,17 @@ class CausalSelfAttention(nn.Module):
         B, T, C = x.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q = self.query(x).reshape(-1, -1, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        k = self.key(x).reshape(-1, -1, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = self.value(x).reshape(-1, -1, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = (torch.matmul(q, k.transpose(-2, -1))) * (1.0 / math.sqrt(k.size(-1)))
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
-        y = torch.matmul(att, v) # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().reshape(-1, -1, C) # re-assemble all head outputs side by side
+        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
@@ -106,7 +106,7 @@ class GPT(nn.Module):
 
         # input embedding stem
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd)
-        self.pos_emb = nestedtensor.nn.NTParameter(nestedtensor.nested_tensor([torch.zeros(i + 1, config.n_embd) for i in range(config.block_size)], device=torch.device('cuda')))
+        self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
         self.drop = nn.Dropout(config.embd_pdrop)
         # transformer
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layer)])
@@ -163,7 +163,6 @@ class GPT(nn.Module):
 
         # validate that we considered every parameter
         param_dict = {pn: p for pn, p in self.named_parameters()}
-        param_dict['pos_emb'] = self.pos_emb
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
@@ -180,11 +179,12 @@ class GPT(nn.Module):
 
     def forward(self, idx, targets=None):
         b, t = idx.size()
-        assert max(idx.nested_size(1)) <= self.block_size, "Cannot forward, model block size is exhausted."
+        assert t <= self.block_size, "Cannot forward, model block size is exhausted."
 
         # forward the GPT model
         token_embeddings = self.tok_emb(idx) # each index maps to a (learnable) vector
-        x = self.drop(token_embeddings + self.pos_emb)
+        position_embeddings = self.pos_emb[:, :t, :] # each position maps to a (learnable) vector
+        x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
         x = self.ln_f(x)
         logits = self.head(x)
@@ -192,6 +192,6 @@ class GPT(nn.Module):
         # if we are given some desired targets also calculate the loss
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits, targets).to_tensor()
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
 
         return logits, loss
